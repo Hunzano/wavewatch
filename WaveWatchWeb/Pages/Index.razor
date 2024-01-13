@@ -1,0 +1,117 @@
+﻿@page "/"
+@using OxyPlot
+@using OxyPlot.Axes
+@using OxyPlot.Series
+@using OxyPlot.Blazor
+@inject HttpClient Http
+@implements IDisposable
+
+
+<PageTitle>Listening</PageTitle>
+
+    <div>
+    <BlazorPlotView Width="100%" Height="30vh" Model="@plotModel" />
+
+    </div>
+
+@if (rssiDataList.Any())
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>RSSI</th>
+                <th>Timestamp</th>
+                <th style="color: red;">Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var data in rssiDataList)
+            {
+                <tr>
+                    <td>@data.id</td>
+                    <td>@data.rssi</td>
+                    <td>@data.timestamp.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                    <td style="color: red;">
+                        @if (data.deviceStatus == "Activo")
+                        {
+                            <p>Body Detected</p>
+                       }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else
+{
+    <p>No data available.</p>
+}
+
+@code {
+    private Timer _timer;
+    private PlotModel plotModel;
+    private LineSeries series;
+    private List<RssiData> rssiDataList = new();
+
+    private const string apiUrl = "http://192.168.4.3:7207/Esp32Data";
+
+    protected override async Task OnInitializedAsync()
+    {
+        plotModel = new PlotModel { Title = "Variación de RSSI" };
+        series = new LineSeries { Title = "RSSI", MarkerType = MarkerType.Circle };
+        plotModel.Series.Add(series);
+        plotModel.Axes.Add(new LinearAxis { Position = AxisPosition.Bottom, Title = "Registro ID" });
+        plotModel.Axes.Add(new LinearAxis { Position = AxisPosition.Left, Title = "RSSI", Minimum = -100, Maximum = 0 });
+        _timer = new Timer(new TimerCallback(_ => InvokeAsync(GetDataFromApi)), null, 0, 100);
+        await GetDataFromApi();
+        UpdatePlotModel();
+    }
+
+    private void UpdatePlotModel()
+    {
+        series.Points.Clear();
+        foreach (var data in rssiDataList)
+        {
+            series.Points.Add(new DataPoint(data.id, data.rssi));
+        }
+        plotModel.InvalidatePlot(true);
+    }
+
+    private async Task GetDataFromApi()
+    {
+        try
+        {
+            var response = await Http.GetAsync(apiUrl);
+            if (response.IsSuccessStatusCode)
+            {
+                var json = await response.Content.ReadAsStringAsync();
+                var allData = System.Text.Json.JsonSerializer.Deserialize<List<RssiData>>(json);
+                rssiDataList = allData.OrderByDescending(d => d.id)
+                                       .Take(500)
+                                       .ToList();
+                UpdatePlotModel();
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Error al obtener datos de RSSI: " + ex.Message);
+        }
+    }
+
+    public class RssiData
+    {
+        public int id { get; set; }
+        public int rssi { get; set; }
+        public string esp32MacAddress { get; set; }
+        public DateTime timestamp { get; set; }
+        public string wifiSsid { get; set; }
+        public string deviceStatus { get; set; }
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+}

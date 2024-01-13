@@ -1,0 +1,164 @@
+﻿@page "/scan"
+@inject HttpClient Http
+
+<h1>Configuration</h1>
+
+<button @onclick="LoadRssiData">Analyze RSSI Data </button>
+
+@if (isLoading)
+{
+    <p>Loading... (Wait around 60 seconds)</p>
+}
+else if (rssiData != null)
+{
+    <EditForm Model="formData" class="analysis-form">
+        <DataAnnotationsValidator />
+        <table class="form-table">
+
+            <tr>
+
+                <th colspan="2"><h3>-------------</h3></th>
+            </tr>
+            <tr>
+                
+                <th colspan="2"><h3>Analysis Result:</h3></th>
+            </tr>
+            <tr>
+                <td><label for="firstRecordTime">Range of time from:</label></td>
+                <td><InputText id="firstRecordTime" @bind-Value="formData.FirstRecordTime" class="input-field" /></td>
+                <td><label for="lastRecordTime">to:</label></td>
+                <td><InputText id="lastRecordTime" @bind-Value="formData.LastRecordTime" class="input-field" /></td>
+            </tr>
+            <tr>
+                <td colspan="2">Number of records analysed: @rssiData.TotalRecords</td>
+            </tr>
+            <tr>
+                <td colspan="2">AP SSID: @rssiData.LastRecordSsid</td>
+            </tr>
+            <tr>
+                <td><label for="lastRecordMac">ASP MAC Address:</label></td>
+                <td><InputText id="lastRecordMac" @bind-Value="formData.LastRecordMac" class="input-field" /></td>
+            </tr>
+            <tr>
+                <td><label for="lastRecordSsid">RSSI Lower: @rssiData.MinRssi</label></td>
+                <td><InputText id="lastRecordSsid" @bind-Value="formData.MinRssi" class="input-field" /></td>
+            </tr>
+            <tr>
+                <td>RSSI Upper: @formData.MaxRssi</td>
+            </tr>
+            <tr>
+                <td><label for="email">Email for notifications:</label></td>
+                <td><InputText id="email" @bind-Value="formData.Email" class="input-field" /></td>
+            </tr>
+            <tr>
+                <td><label for="phone">Phone for text notifications:</label></td>
+                <td><InputText id="phone" @bind-Value="formData.Phone" class="input-field" /></td>
+            </tr>
+            <tr>
+                <td colspan="2">
+                    <button type="submit" class="submit-button" @onclick="SubmitFormData">Set configuration</button>
+                </td>
+            </tr>
+        </table>
+    </EditForm>
+if (saved)
+{
+    <p>Configuration Saved</p>
+}
+
+}
+else
+{
+    <p>Start analysis for 60 seconds</p>
+}
+
+
+@code {
+    private bool isLoading = false;
+    private RssiDataResponse rssiData;
+    private FormDataModel formData = new FormDataModel();
+    private Timer timer;
+    private bool saved = false;
+
+    private async Task SubmitFormData()
+    {
+        try
+        {
+            var response = await Http.PostAsJsonAsync("http://192.168.4.3:7207/Configuration", formData);
+            if (response.IsSuccessStatusCode)
+            {
+                saved = true;
+            }
+            else
+            {
+                // Manejar errores
+                Console.WriteLine($"Error al enviar datos: {response.StatusCode}");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Manejar excepciones
+            Console.WriteLine($"Excepción al enviar datos: {ex.Message}");
+        }
+    }
+
+    private async Task LoadRssiData()
+    {
+        isLoading = true;
+        rssiData = null;
+        timer = new Timer(new TimerCallback(_ => { }), null, 1000, 1000);
+
+        rssiData = await Http.GetFromJsonAsync<RssiDataResponse>("http://192.168.4.3:7207/RssiData/GetRssiExtremes");
+
+        if (rssiData != null)
+        {
+            int add1Min = rssiData.MinRssi - 1;
+            formData = new FormDataModel
+                {
+
+                    FirstRecordTime = rssiData.FirstRecordTime.ToString(),
+                    LastRecordTime = rssiData.LastRecordTime.ToString(),
+                    TotalRecords = rssiData.TotalRecords.ToString(),
+                    LastRecordMac = rssiData.LastRecordMac,
+                    LastRecordSsid = rssiData.LastRecordSsid,
+                    MinRssi = add1Min.ToString(),
+                    MaxRssi = rssiData.MaxRssi.ToString(),
+                };
+        }
+
+        timer.Dispose();
+        isLoading = false;
+        saved = false;
+    }
+
+
+
+    public class RssiDataResponse
+    {
+        public DateTime FirstRecordTime { get; set; }
+        public DateTime LastRecordTime { get; set; }
+        public int TotalRecords { get; set; }
+        public string LastRecordMac { get; set; }
+        public string LastRecordSsid { get; set; }
+        public int MinRssi { get; set; }
+        public int MaxRssi { get; set; }
+    }
+
+    public class FormDataModel
+    {
+        public string FirstRecordTime { get; set; }
+        public string LastRecordTime { get; set; }
+        public string TotalRecords { get; set; }
+        public string LastRecordMac { get; set; }
+        public string LastRecordSsid { get; set; }
+        public string MinRssi { get; set; }
+        public string MaxRssi { get; set; }
+        public string Email { get; set; }
+        public string Phone { get; set; }
+    }
+
+    public void Dispose()
+    {
+        timer?.Dispose();
+    }
+}
